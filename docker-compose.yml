@@ -1,0 +1,90 @@
+services:
+  netbox-ipmi-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: netbox-ipmi-agent:latest
+    container_name: netbox-ipmi-agent
+
+    # Restart policy:
+    # - always: перезапуск всегда (даже после reboot хоста)
+    # - unless-stopped: перезапуск, если не был остановлен вручную
+    # - on-failure: перезапуск только при ошибке (exit code != 0)
+    restart: always
+
+    # Health check - проверка что агент работает
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "netbox-ipmi-agent"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    volumes:
+      # Persistent storage for SQLite state database
+      - agent-data:/data
+
+    environment:
+      # NetBox configuration
+      - NETBOX_URL=${NETBOX_URL}
+      - NETBOX_TOKEN=${NETBOX_TOKEN}
+      - NETBOX_VERIFY_SSL=${NETBOX_VERIFY_SSL:-true}
+
+      # Switch selector for FDB collection
+      # Servers are auto-detected by OOB IP presence
+      - SWITCHES_SELECTOR=${SWITCHES_SELECTOR:-role:switch}
+
+      # Polling configuration
+      - POLL_INTERVAL=${POLL_INTERVAL:-300}
+      - MOVE_CONFIRM_RUNS=${MOVE_CONFIRM_RUNS:-2}
+
+      # SNMP configuration
+      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
+      - SNMP_VERSION=${SNMP_VERSION:-2c}
+      - SNMP_TIMEOUT=${SNMP_TIMEOUT:-5}
+      - SNMP_RETRIES=${SNMP_RETRIES:-2}
+
+      # Uplink detection
+      - UPLINK_PORTS=${UPLINK_PORTS:-}
+      - UPLINK_PATTERNS=${UPLINK_PATTERNS:-uplink,trunk,lag,po}
+
+      # MLAG groups
+      - MLAG_GROUPS=${MLAG_GROUPS:-{}}
+
+      # Alerting: записи идут в NetBox Journal Entries
+      # Токен NETBOX_TOKEN должен иметь права на создание journal entries
+
+      # State database (inside container volume)
+      - STATE_DB_PATH=/data/state.db
+
+      # Alert deduplication
+      - REMIND_AFTER=${REMIND_AFTER:-6h}
+
+      # Tag-based alerting for NetBox Webhooks
+      - MOVE_TAG_NAME=${MOVE_TAG_NAME:-ipmi-moved}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+
+    # Logging driver - ограничение размера логов
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network mode for SNMP access to switches
+    # Uncomment if switches are on local network and need host networking
+    # network_mode: host
+
+    networks:
+      - agent-network
+
+volumes:
+  agent-data:
+    driver: local
+
+networks:
+  agent-network:
+    driver: bridge
