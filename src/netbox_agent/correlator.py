@@ -11,6 +11,7 @@ from .models import (
     ObservedEndpoint,
     ServerIpmi,
     SwitchFdb,
+    normalize_port_name,
 )
 
 logger = get_logger(__name__)
@@ -247,7 +248,7 @@ class Correlator:
 
         # Check if on MLAG peer (same port name, different switch in same MLAG group)
         if self._is_mlag_peer(expected.switch_name, observed.switch_name):
-            if observed.port_name.lower() == expected.port_name.lower():
+            if normalize_port_name(observed.port_name) == normalize_port_name(expected.port_name):
                 return MoveStatus.OK_MLAG_PEER
             # Different port on MLAG peer - still a move
             # But could be normal for certain MLAG configurations

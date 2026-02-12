@@ -1,8 +1,41 @@
 """Data models for NetBox IPMI Agent."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+# Port name normalization: long SNMP names → short NetBox names
+_PORT_PREFIXES = [
+    (re.compile(r"^40GigabitEthernet", re.IGNORECASE), "40GE"),
+    (re.compile(r"^TwentyFiveGigE", re.IGNORECASE), "25GE"),
+    (re.compile(r"^TenGigabitEthernet", re.IGNORECASE), "10GE"),
+    (re.compile(r"^TenGigE", re.IGNORECASE), "10GE"),
+    (re.compile(r"^GigabitEthernet", re.IGNORECASE), "GE"),
+    (re.compile(r"^FastEthernet", re.IGNORECASE), "FE"),
+    (re.compile(r"^HundredGigE", re.IGNORECASE), "100GE"),
+    (re.compile(r"^Ethernet", re.IGNORECASE), "Eth"),
+    (re.compile(r"^Vlanif", re.IGNORECASE), "Vlanif"),
+    (re.compile(r"^LoopBack", re.IGNORECASE), "LoopBack"),
+    (re.compile(r"^Eth-Trunk", re.IGNORECASE), "Eth-Trunk"),
+    (re.compile(r"^Port-channel", re.IGNORECASE), "Po"),
+]
+
+
+def normalize_port_name(name: str) -> str:
+    """
+    Normalize port name to short form for comparison.
+
+    Examples:
+        GigabitEthernet0/0/7  → ge0/0/7
+        GE0/0/7               → ge0/0/7
+        TenGigabitEthernet1/0/1 → 10ge1/0/1
+        10GE1/0/1             → 10ge1/0/1
+    """
+    normalized = name.strip()
+    for pattern, short in _PORT_PREFIXES:
+        normalized = pattern.sub(short, normalized)
+    return normalized.lower()
 
 
 class MoveStatus(str, Enum):
@@ -72,7 +105,7 @@ class ObservedEndpoint:
             return False
         return (
             self.switch_name.lower() == expected.switch_name.lower()
-            and self.port_name.lower() == expected.port_name.lower()
+            and normalize_port_name(self.port_name) == normalize_port_name(expected.port_name)
         )
 
 

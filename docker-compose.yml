@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: netbox-ipmi-agent:1.0.0
+    image: netbox-ipmi-agent:1.0.1
     container_name: netbox-ipmi-agent
 
     # Restart policy:
