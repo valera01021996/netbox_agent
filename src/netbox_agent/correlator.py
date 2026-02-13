@@ -98,30 +98,50 @@ class Correlator:
         self,
         observations: list[ObservedEndpoint],
         expected_switch: str | None,
+        expected_port: str | None = None,
     ) -> ObservedEndpoint | None:
         """
         Select the best observation from multiple FDB entries.
 
         Priority:
         1. Non-uplink ports
-        2. Expected switch (if matching)
+        2. If multiple ports on same switch — prefer NON-expected port
+           (if MAC is on both old and new port, the new port is the real one)
         3. First found
         """
         if not observations:
             return None
 
+        if len(observations) > 1:
+            logger.info(
+                f"MAC found on {len(observations)} ports",
+                ports=[f"{o.switch_name}:{o.port_name}" for o in observations],
+            )
+
         # Filter out uplink ports if there are non-uplink options
         non_uplink = [o for o in observations if not self._is_uplink_port(o.port_name)]
         candidates = non_uplink if non_uplink else observations
 
-        # Prefer observation on expected switch
-        if expected_switch:
+        # If only one candidate — return it
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # If MAC is on multiple ports of the expected switch,
+        # prefer the port that does NOT match expected (it's the real/new location)
+        if expected_switch and expected_port:
             expected_lower = expected_switch.lower()
-            on_expected = [
+            expected_port_norm = normalize_port_name(expected_port)
+            on_expected_switch = [
                 o for o in candidates if o.switch_name.lower() == expected_lower
             ]
-            if on_expected:
-                return on_expected[0]
+            if len(on_expected_switch) > 1:
+                # MAC on multiple ports — prefer the non-expected port
+                non_expected_port = [
+                    o for o in on_expected_switch
+                    if normalize_port_name(o.port_name) != expected_port_norm
+                ]
+                if non_expected_port:
+                    return non_expected_port[0]
 
         return candidates[0]
 
@@ -149,6 +169,15 @@ class Correlator:
             # Find MAC in FDB
             observations = self._find_mac_in_fdb(mac, fdb_data)
 
+            logger.info(
+                f"MAC lookup result",
+                server=server.server_name,
+                mac=mac,
+                expected=f"{expected.switch_name}:{expected.port_name}" if expected else None,
+                found_on=[f"{o.switch_name}:{o.port_name}" for o in observations],
+                found_count=len(observations),
+            )
+
             if not observations:
                 # MAC not found in any FDB
                 events.append(
@@ -168,7 +197,8 @@ class Correlator:
 
             # Select best observation
             expected_switch = expected.switch_name if expected else None
-            observed = self._select_best_observation(observations, expected_switch)
+            expected_port = expected.port_name if expected else None
+            observed = self._select_best_observation(observations, expected_switch, expected_port)
 
             if observed is None:
                 events.append(
